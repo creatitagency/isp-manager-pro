@@ -5,7 +5,13 @@
 import { Resend } from "resend";
 import prisma from "./db";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let _resend: Resend | null = null;
+function getResend(): Resend {
+  if (!_resend) {
+    _resend = new Resend(process.env.RESEND_API_KEY || "re_placeholder");
+  }
+  return _resend;
+}
 const FROM = process.env.EMAIL_FROM || "MooviTelecom <noreply@moovitelecom.com>";
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME || "MooviTelecom";
 
@@ -233,7 +239,7 @@ async function sendEmail(params: {
   metadata?: Record<string, string>;
 }) {
   try {
-    const result = await resend.emails.send({
+    const result = await getResend().emails.send({
       from: FROM,
       to: params.to,
       subject: params.subject,
