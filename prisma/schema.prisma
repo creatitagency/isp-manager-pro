@@ -33,7 +33,7 @@ enum UserRole {
 // ─── CLIENTES ─────────────────────────────────────────────────
 model Client {
   id              String         @id @default(cuid())
-  code            String         @unique
+  code            String         @unique  // CLI-00001
   name            String
   dni             String         @unique
   email           String
@@ -50,20 +50,405 @@ model Client {
   notes           String?
   loyaltyPoints   Int            @default(0)
   commercial      String?
-  channelSource   String?
-  portalPassword  String?
+  channelSource   String?        // Web, Teléfono, Tienda, Comercial
+  portalPassword  String?        // Hashed password for client portal
   portalEnabled   Boolean        @default(false)
-  finetworkId     String?
+
+  // Finetwork integration
+  finetworkId     String?        // ID in Finetwork system
   finetworkSync   DateTime?
+
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+
   services        Service[]
   invoices        Invoice[]
   tickets         Ticket[]
   contracts       Contract[]
   portabilities   Portability[]
   cdrs            CDR[]
+
   @@index([status])
   @@index([dni])
   @@index([email])
+}
+
+enum ClientType {
+  PARTICULAR
+  BUSINESS
+}
+
+enum ClientStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  SEPA
+  CARD
+  TRANSFER
+}
+
+// ─── SERVICIOS / LÍNEAS ───────────────────────────────────────
+model Service {
+  id              String         @id @default(cuid())
+  clientId        String
+  client          Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type            ServiceType
+  planId          String
+  plan            Plan           @relation(fields: [planId], references: [id])
+  status          ServiceStatus  @default(PENDING)
+  phoneNumber     String?        // For mobile lines
+  activationDate  DateTime?
+  cancellationDate DateTime?
+
+  // FTTH specific
+  routerModel     String?
+  routerSerial    String?
+  oltId           String?
+  ontId           String?
+
+  // Finetwork integration
+  finetworkLineId String?
+  finetworkProductId String?
+  iccid           String?
+  imsi            String?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  cdrs            CDR[]
+
+  @@index([clientId])
+  @@index([phoneNumber])
+  @@index([status])
+}
+
+enum ServiceType {
+  FIBER
+  MOBILE
+  CONVERGENT
+  VOIP
+}
+
+enum ServiceStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+  CANCELLED
+}
+
+// ─── PLANES / TARIFAS ────────────────────────────────────────
+model Plan {
+  id            String      @id @default(cuid())
+  code          String      @unique   // FIB100, MOV15, CONV2
+  name          String
+  type          ServiceType
+  price         Float
+  speed         String?     // 300/300 Mbps
+  data          String?     // 15GB
+  minutes       String?     // Ilimitados
+  description   String?
+  active        Boolean     @default(true)
+  sortOrder     Int         @default(0)
+
+  // Finetwork mapping
+  finetworkProductId String?
+
+  services      Service[]
+  contracts     Contract[]
+
+  @@index([type, active])
+}
+
+// ─── FACTURACIÓN ──────────────────────────────────────────────
+model Invoice {
+  id              String         @id @default(cuid())
+  number          String         @unique  // FAC-2026-000001
+  series          String         @default("A")
+  clientId        String
+  client          Client         @relation(fields: [clientId], references: [id])
+  period          String         // 2026-03
+  issueDate       DateTime
+  dueDate         DateTime
+  concept         String
+  baseAmount      Float
+  extras          Float          @default(0)
+  discount        Float          @default(0)
+  subtotal        Float
+  taxRate         Float          @default(21)
+  taxAmount       Float
+  total           Float
+  status          InvoiceStatus  @default(DRAFT)
+  paymentMethod   PaymentMethod
+  iban            String?
+  remittanceId    String?        // SEPA remittance batch ID
+  paidAt          DateTime?
+  sentAt          DateTime?      // Email sent date
+  pdfUrl          String?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  items           InvoiceItem[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([period])
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  concept     String
+  quantity    Int      @default(1)
+  unitPrice   Float
+  total       Float
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  SENT
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+// ─── CDRs ─────────────────────────────────────────────────────
+model CDR {
+  id              String     @id @default(cuid())
+  clientId        String
+  client          Client     @relation(fields: [clientId], references: [id])
+  serviceId       String?
+  service         Service?   @relation(fields: [serviceId], references: [id])
+  type            CDRType
+  origin          String
+  destination     String
+  dateTime        DateTime
+  duration        Int        @default(0)   // seconds
+  volumeKB        Int        @default(0)
+  cost            Float      @default(0)
+  rated           Boolean    @default(false)
+  operatorDest    String?
+  cellId          String?
+  imsi            String?
+
+  // Import tracking
+  importBatchId   String?
+  importSource    String?    // FTP, API, Manual
+
+  createdAt       DateTime   @default(now())
+
+  @@index([clientId])
+  @@index([serviceId])
+  @@index([dateTime])
+  @@index([importBatchId])
+}
+
+enum CDRType {
+  VOICE_OUT
+  VOICE_IN
+  SMS_OUT
+  SMS_IN
+  DATA
+}
+
+// ─── TICKETS ──────────────────────────────────────────────────
+model Ticket {
+  id              String         @id @default(cuid())
+  code            String         @unique  // TK-000001
+  clientId        String
+  client          Client         @relation(fields: [clientId], references: [id])
+  category        String
+  priority        TicketPriority @default(MEDIUM)
+  status          TicketStatus   @default(OPEN)
+  subject         String
+  description     String
+  channel         String         @default("Web")
+  sla             String?
+  assignedToId    String?
+  assignedTo      User?          @relation("AssignedTickets", fields: [assignedToId], references: [id])
+  createdById     String?
+  createdBy       User?          @relation("CreatedTickets", fields: [createdById], references: [id])
+  resolvedAt      DateTime?
+  closedAt        DateTime?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  messages        TicketMessage[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([priority])
+}
+
+model TicketMessage {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author    String
+  content   String
+  isInternal Boolean @default(false)
+  createdAt DateTime @default(now())
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CLIENT
+  RESOLVED
+  CLOSED
+}
+
+// ─── PORTABILIDADES ───────────────────────────────────────────
+model Portability {
+  id              String            @id @default(cuid())
+  code            String            @unique  // PRT-00001
+  clientId        String
+  client          Client            @relation(fields: [clientId], references: [id])
+  phoneNumber     String
+  type            PortabilityType
+  status          PortabilityStatus @default(REQUESTED)
+  originOperator  String
+  destOperator    String            @default("MooviTelecom")
+  requestDate     DateTime          @default(now())
+  windowDate      DateTime?
+  completedDate   DateTime?
+  iccid           String?
+  rejectionReason String?
+
+  // Finetwork
+  finetworkOrderId String?
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+}
+
+enum PortabilityType {
+  MOBILE
+  FIXED
+}
+
+enum PortabilityStatus {
+  REQUESTED
+  DOCUMENTS
+  SENT_OPERATOR
+  ACCEPTED
+  WINDOW_ASSIGNED
+  COMPLETED
+  REJECTED
+}
+
+// ─── CONTRATOS ────────────────────────────────────────────────
+model Contract {
+  id              String          @id @default(cuid())
+  code            String          @unique  // CTR-000001
+  clientId        String
+  client          Client          @relation(fields: [clientId], references: [id])
+  planId          String
+  plan            Plan            @relation(fields: [planId], references: [id])
+  monthlyPrice    Float
+  startDate       DateTime
+  endDate         DateTime?
+  commitment      Int             @default(0)  // months
+  remainingMonths Int             @default(0)
+  status          ContractStatus  @default(PENDING_SIGNATURE)
+  digitalSignature Boolean        @default(false)
+  signedAt        DateTime?
+  signatureUrl    String?
+  documents       Int             @default(0)
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+}
+
+enum ContractStatus {
+  PENDING_SIGNATURE
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+// ─── INVENTARIO ───────────────────────────────────────────────
+model InventoryItem {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  type          String   // Router, ONT, SIM, Cable, Splitter
+  model         String
+  purchasePrice Float
+  stock         Int      @default(0)
+  minStock      Int      @default(5)
+  location      String
+  supplier      String
+  lastEntry     DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([type])
+}
+
+// ─── CONFIGURACIÓN BILLING AUTOMATION ─────────────────────────
+model BillingConfig {
+  id                String   @id @default(cuid())
+  billingDay        Int      @default(1)     // Day of month to generate invoices
+  dueDays           Int      @default(20)    // Days until due
+  autoGenerate      Boolean  @default(true)
+  autoSendEmail     Boolean  @default(true)
+  autoSEPA          Boolean  @default(false)
+  reminderDays      Int      @default(5)     // Days before due to send reminder
+  overdueNotifyDays Int      @default(3)     // Days after due to mark overdue
+  emailFromName     String   @default("MooviTelecom")
+  emailSubjectTemplate String @default("Factura {invoice_number} - {period}")
+  taxRate           Float    @default(21)
+  series            String   @default("A")
+  lastRunAt         DateTime?
+  updatedAt         DateTime @updatedAt
+}
+
+// ─── EMAIL LOG ────────────────────────────────────────────────
+model EmailLog {
+  id          String    @id @default(cuid())
+  to          String
+  subject     String
+  template    String
+  status      String    @default("sent")  // sent, failed, bounced
+  messageId   String?
+  error       String?
+  metadata    String?   // JSON
+  sentAt      DateTime  @default(now())
+}
+
+// ─── AUDIT LOG ────────────────────────────────────────────────
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  entity      String
+  entityId    String?
+  details     String?  // JSON
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
 }
