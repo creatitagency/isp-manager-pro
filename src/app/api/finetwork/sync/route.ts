@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFinetworkClient } from "@/lib/finetwork";
 import prisma from "@/lib/db";
+import { PortabilityStatus, ServiceStatus } from "@prisma/client";
 
 export async function POST(request: NextRequest) {
   try {
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
             await prisma.service.updateMany({
               where: { finetworkLineId: line.id },
               data: {
-                status: line.status === "active" ? "ACTIVE" : line.status === "suspended" ? "SUSPENDED" : "CANCELLED",
+                status: (line.status === "active" ? "ACTIVE" : line.status === "suspended" ? "SUSPENDED" : "CANCELLED") as ServiceStatus,
                 iccid: line.iccid,
                 imsi: line.imsi,
               },
@@ -112,8 +113,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function mapPortabilityStatus(status: string): string {
-  const map: Record<string, string> = {
+function mapPortabilityStatus(status: string): PortabilityStatus {
+  const map: Record<string, PortabilityStatus> = {
     requested: "REQUESTED",
     pending_documents: "DOCUMENTS",
     sent_to_operator: "SENT_OPERATOR",
