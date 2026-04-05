@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── AUTENTICACIÓN ────────────────────────────────────────────
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String
+  role          UserRole  @default(OPERATOR)
+  avatar        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  tickets       Ticket[]  @relation("AssignedTickets")
+  createdTickets Ticket[] @relation("CreatedTickets")
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  TECHNICIAN
+  COMMERCIAL
+  BILLING
+  CLIENT
+}
+
+// ─── CLIENTES ─────────────────────────────────────────────────
+model Client {
+  id              String         @id @default(cuid())
+  code            String         @unique
+  name            String
+  dni             String         @unique
+  email           String
+  phone           String
+  address         String
+  city            String
+  province        String
+  postalCode      String
+  type            ClientType     @default(PARTICULAR)
+  company         String?
+  status          ClientStatus   @default(PENDING)
+  iban            String?
+  paymentMethod   PaymentMethod  @default(SEPA)
+  notes           String?
+  loyaltyPoints   Int            @default(0)
+  commercial      String?
+  channelSource   String?
+  portalPassword  String?
+  portalEnabled   Boolean        @default(false)
+  finetworkId     String?
+  finetworkSync   DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  services        Service[]
+  invoices        Invoice[]
+  tickets         Ticket[]
+  contracts       Contract[]
+  portabilities   Portability[]
+  cdrs            CDR[]
+  @@index([status])
+  @@index([dni])
+  @@index([email])
+}
